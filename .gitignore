@@ -1,0 +1,24 @@
+# Android / Gradle
+*.iml
+.gradle/
+.kotlin/
+**/build/
+/captures
+.externalNativeBuild
+.cxx
+.DS_Store
+
+# IDE
+/.idea
+/.vscode
+
+# Local
+local.properties
+
+# Claude Code (local dev tooling, design notes)
+.claude/
+CLAUDE.md
+
+# Logcat dumps, screenshots, scratch memos at repo root (do not commit)
+/*.txt
+/*.png

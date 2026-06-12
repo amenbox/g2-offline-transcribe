@@ -1,0 +1,33 @@
+<resources>
+    <string name="app_name">G2オフライン文字起こし</string>
+    <string name="status_connecting">接続中…</string>
+    <string name="status_connected">接続済み</string>
+    <string name="status_disconnected">未接続</string>
+    <string name="status_paused">一時停止中</string>
+    <string name="status_scanning">スキャン中…</string>
+    <string name="status_bt_off">Bluetoothを有効にしてください</string>
+    <string name="notif_channel_name">G2オフライン文字起こし</string>
+    <string name="notif_running">文字起こし中</string>
+    <string name="notif_connecting">G2 接続中…</string>
+    <string name="force_stop_to_hub">終了</string>
+    <string name="status_needs_reset">G2 をケースで開け直してください</string>
+    <string name="notif_needs_reset">G2 をケースで開け直してください</string>
+    <string name="stop_label">■ 停止</string>
+    <string name="logs_title">ログ一覧</string>
+    <string name="pref_open_logs">ログを見る</string>
+    <string name="logs_empty">保存されたログはありません</string>
+    <string name="settings_title">設定</string>
+    <string name="pref_save_log">ログを保存する</string>
+    <string name="pref_display_timeout">G2 表示の自動消去（秒）</string>
+    <string name="pref_display_timeout_off">0 = 消さない</string>
+    <string name="pref_stt_engine">音声認識エンジン</string>
+    <string name="pref_stt_engine_android">標準（Pixel オフライン）</string>
+    <string name="pref_stt_engine_yyapis">YYAPIs（ネット必須・高精度）</string>
+    <string name="pref_yyapis_api_key">YYAPIs API キー</string>
+    <string name="pref_yyapis_api_key_summary">YYAPIs を選んだ場合のみ必要。各自で取得してここに貼り付けてください。</string>
+    <string name="pref_yyapis_api_key_placeholder">APIキーを入力</string>
+    <string name="engine_switch_title">エンジン切替</string>
+    <string name="engine_switch_message">適用するにはアプリの再起動が必要です</string>
+    <string name="engine_switch_restart_now">今すぐ再起動</string>
+    <string name="engine_switch_later">後で</string>
+</resources>

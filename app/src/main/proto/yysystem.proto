@@ -1,0 +1,287 @@
+syntax = "proto3";
+
+package yysystem;
+
+option cc_enable_arenas = true;
+option java_multiple_files = true;
+
+// 音声認識サービス
+service YYSpeech {
+  // 双方向ストリーミング音声認識
+  rpc RecognizeStream(stream StreamRequest) returns (stream StreamResponse) {};
+}
+
+// ステータス
+message Status {
+  //  コード
+  int32 code = 1;
+  // メッセージ
+  string message = 2;
+  // 詳細
+  string details = 3;
+}
+
+// [not implemented] ルビ情報
+message RubyInfo {
+  // 開始地点
+  // transcriptの1文字目を0として何文字目から始まるかを示す値
+  int32 start_index = 1;
+  // 終了地点
+  // transcriptの1文字目を0として何文字目で終わるかを示す値
+  int32 end_index = 2;
+  // transcriptに含まれているルビを振る単語
+  string rb = 3;
+  // rbの読み
+  string rt = 4;
+  // rbの発音
+  string pronunciation = 5;
+  // 読みが複数ある場合に格納される読みの配列
+  repeated string other_readings = 6;
+}
+
+// 単語情報
+message WordInfo {
+  // 開始時間[ms]
+  double start_time = 1;
+  // 終了時間[ms]
+  double end_time = 2;
+  // 単語
+  string word = 3;
+  // 読み
+  string reading = 4;
+  // 品詞
+  string part_of_speech = 5;
+  // 発音
+  string pronunciation = 6;
+}
+
+// 辞書
+message Dictionary {
+  // 単語
+  string word = 1;
+  // 読み
+  // oneline: 読み reading
+  //辞書が適用される読みを指定します。 読み辞書を使う場合は ひらがな を使います。文字列置換辞書を使う場合は [] で囲います。 正規表現検索置換辞書を使う場合は [pattern]>[search_word] の形式で指定します。 例. ばなな [葡萄] [(?<=漢字の)リンゴ]>[リンゴ]
+  string reading = 2;
+  // 無効化
+  // true: この辞書を無効化して辞書を適用しない
+  // false: 無効化しない。デフォルト値
+  bool disabled = 3;
+  // 辞書タイプ DictionaryContextのタイプよりも優先される
+  string type = 4;
+  // パターン
+  // string_search_replacement: 辞書が適用される文字列を指定
+  // regex_replacement, regex_search_replacement: 辞書が適用される正規表現パターンを指定
+  string pattern = 5;
+  // regex_search_replacement: paternの正規表現にマッチした文字列から、ここで指定した文字列を検索して置換
+  string search_word = 6;
+}
+
+// セッション辞書
+message DictionaryContext {
+  // 辞書
+  // Dictionary配列
+  repeated Dictionary dictionaries = 1;
+  // 辞書タイプ
+  // readings, string_replacement, regex_replacement, regex_search_replacement のいずれか1つ
+  string type = 2;
+}
+
+// フレーズ
+message Phrase {
+  // フレーズの値
+  // 例: "医道"
+  string value = 1;
+  // [not implemented] ブースト値
+  float boost = 2;
+}
+
+// フレーズコンテキスト
+message PhraseContext {
+  // フレーズリスト
+  // 優先的に表示したい語句（フレーズ）のリスト
+  repeated Phrase phrases = 1;
+  // [not implemented] ブースト値
+  float boost = 2;
+}
+
+// RecognizeStreamの設定値
+message StreamingConfig {
+  // 音声データのエンコード
+  // デフォルト値: LINEAR16
+  // LINEAR16: 16ビットリニアPCM
+  optional string encoding = 1;
+  // 音声データのサンプリングレート
+  // デフォルト直: 16000
+  optional int32 sample_rate_hertz = 2;
+  // 言語コード
+  // デフォルト値: 4
+  // language_codeの項を参照
+  optional int32 language_code = 3;
+  // 最終結果のレスポンスデータに単語情報を含める設定
+  // デフォルト値: false
+  // true：最終結果に単語情報を含める
+  // false：最終結果に単語情報を含めない
+  optional bool enable_word = 4;
+  // 音声認識モデル
+  // 10: 最新モデル
+  // 11: 会話モデル
+  // 1: 旧モデル
+  optional int32 model = 5;
+  // 音声認識の途中結果を返す設定
+  // デフォルト値: false
+  // true：途中結果を返す
+  // false：途中結果を返さない
+  optional bool enable_interim_results = 6;
+  // [not implemented]
+  // 翻訳言語
+  // デフォルト値: [] 空配列
+  repeated string translate_to = 7;
+  // [not implemented]
+  // レスポンスデータにルビ情報を含める設定
+  // デフォルト値: false
+  // true：最終結果にルビ情報を含める
+  // false：最終結果にルビ情報を含めない
+  optional bool enable_ruby = 8;
+  // 音声データのチャンネル数
+  // デフォルト値: 1
+  optional int32 audio_channel_count = 9;
+  // 最終けかを返す前の無音区間[ms]
+  // デフォルト値: 500
+  // 設定範囲: 100 - 2500
+  // model = 10, 11 の時のみ有効
+  optional int32 segmentation_silence_timeout_ms = 10;
+  // セッション辞書リスト
+  // デフォルト値: [] 空配列
+  repeated DictionaryContext dictionary_contexts = 11;
+  // 優先語句リスト [] 空配列
+  repeated PhraseContext phrase_contexts = 12;
+  // 自動言語検出
+  // デフォルト値: なし
+  // model = 10, 11 の時のみ有効
+  // 例: 英語と日本語が話される可能性があるとき
+  // [1, 4]
+  repeated int32 auto_detect_language_codes = 13;
+  // [not implemented]
+  // 翻訳のレスポンスを有効にする
+  // デフォルト値: true
+  // true：最終結果に翻訳結果を含める
+  // false：最終結果に翻訳結果を含めない
+  // translate_toが設定されている場合のみ機能する
+  // 翻訳結果のレスポンスは
+  optional bool enable_translation = 14;
+  // [deprecated]
+  // 短文切り出し
+  // model = 10, 11 の時のみ有効
+  // language_code = 4 の時のみ有効
+  // デフォルト: false
+  // true：短文切り出しする
+  // false: 短文切り出ししない
+  optional bool shorten_texts = 15;
+  // テキスト修正のレスポンスを有効にする
+  // デフォルト値: false
+  // true：テキスト修正を有効にする
+  // false：テキスト修正を無効にする
+  optional bool revise_texts = 16;
+  // 自動言語識別を有効にする
+  // auto_detect_language_codesが設定されている場合のみ機能する
+  // デフォルト値: true
+  // true：自動言語識別を有効にする
+  // false：自動言語識別を無効にする
+  // model = 10, 11 の時のみ有効
+  optional bool enable_auto_detect_language = 17;
+}
+
+// RecognizeStreamのリクエストデータ
+message StreamRequest {
+  // 音声バッファデータ
+  // gRPC通信接続時のmetadata、
+  // またはリクエストmessageのstreaming_configで
+  // 送信する音声データとencoding, sample_rate_hertz, audio_channel_countを合わせること。
+
+  // バッファサイズの推奨値 3200 〜 8192 bytes (encoding=LINEAR16, sample_rate_hertz =16000, audio_channel_count = 1の場合)
+  // リクエストの時間間隔を指定する必要がある場合は、100msを推奨します。
+  // （参考）ミリ秒[ms]とバッファサイズ[bytes]の関係式（LINEAR16の場合）
+  // <BUFFER_SIZE> [bytes] = 16 [bit (per frame)] / 8 [bit / bytes] * 16000 [Hz] / 1000 [ms / s] * <MILLI_SECONDS> [ms] * 1 [number of audio channels]
+  bytes audiobytes = 1;
+  // ストリーミング設定値
+  StreamingConfig streaming_config = 2;
+}
+
+
+// 翻訳結果
+message TranslationResult {
+  // 翻訳先言語
+  string to = 1;
+  // 翻訳結果
+  string text = 2;
+}
+
+// [deprecated] 短縮テキスト詳細
+message ShortenTextsDetails {
+  // サーバーが追加した無音時間のバイトサイズ
+  int32 silence_byte_size = 1;
+}
+
+// 音声認識結果
+message StreamResult {
+  // 最終結果の判定
+  // true: 最終結果
+  // false: 途中結果
+  bool is_final = 1;
+  // 文字起こし結果
+  string transcript = 2;
+  // 単語情報
+  repeated WordInfo words = 3;
+  // 翻訳結果
+  repeated TranslationResult translations = 4;
+  // [not implemented] ルビの情報
+  repeated RubyInfo rubies = 5;
+  // [deprecated]
+  // 結果のID
+  // 途中結果と最終結果を紐づけるID
+  string result_id = 6;
+  // 話者ID
+  // model = 11 の時のみ有効
+  // 例:
+  // Unknown, Guest-1, Guest-2, ...
+  string speaker_id = 7;
+  // 自動言語検出で識別された言語コード
+  int32 detected_language_code = 8;
+  // [deprecated]
+  // 短文切り出しの詳細
+  // YYSpeechEventTypeがTEXT_SHORTENEDの場合のみ使用
+  ShortenTextsDetails shorten_texts_details = 9;
+}
+
+// イベントタイプ
+enum YYSpeechEventType {
+  // プロトファイルのバージョンの不一致がある場合に返されることがある
+  UNKNOWN = 0;
+  // セッション継続可能なエラーレスポンス
+  ERROR = 1;
+  // 音声認識結果のレスポンス
+  SPEECH_RECOGNIZED = 2;
+  // [deprecated] 短文切り出し結果
+  TEXT_SHORTENED = 3;
+  // テキスト修正結果
+  TEXT_REVISED = 4;
+  // 翻訳結果
+  TEXT_TRANSLATED = 5;
+}
+
+// RecognizeStreamのレスポンスデータ
+message StreamResponse {
+  // エラー情報
+  Status error = 1;
+  // 音声認識結果
+  StreamResult result = 2;
+  // [deprecated] ストリーミング設定値
+  StreamingConfig streaming_config = 3;
+  // リクエストID gRPC接続時に生成されるユニークなID
+  string request_id = 4;
+  // イベントタイプ
+  YYSpeechEventType event_type = 5;
+  // 音声認識結果のID 最終結果ごとに更新されるユニークなID
+  string result_id = 6;
+}
