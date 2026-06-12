@@ -36,6 +36,18 @@ class SpeechEngine(private val context: Context) : SttEngine {
     private var sessionReadFd: ParcelFileDescriptor? = null
     @Volatile private var writeStream: OutputStream? = null
     @Volatile private var running = false
+    // Counts errors with no sign of life in between. Reset whenever the recognizer
+    // shows activity (onBeginningOfSpeech / onPartialResults). If we exceed the
+    // threshold the recognizer is presumed unavailable and we stop retrying instead
+    // of looping forever — the loop both wastes battery and floods the AiAi service's
+    // session pool with dead clients.
+    private var consecutiveErrors = 0
+    // RECOGNIZER_BUSY is special: it means another client (Live Caption, Recorder,
+    // a stale session from this app's prior process, etc.) holds the only on-device
+    // ASR slot. Retrying just leaks more session references because destroy() doesn't
+    // synchronously release the binder. Give up after 2 BUSYs so we don't dig the
+    // hole deeper — only a process kill will free the slots anyway.
+    private var consecutiveBusyErrors = 0
 
     override fun setListener(l: SttEngine.Listener) { listener = l }
     override fun setModelStatusListener(l: SttEngine.ModelStatusListener?) { modelListener = l }
@@ -129,10 +141,6 @@ class SpeechEngine(private val context: Context) : SttEngine {
 
     private inner class InnerListener : RecognitionListener {
         private var lastPartialText: String? = null
-        // Bail out if we get nothing but errors back-to-back (e.g. Pixel on-device
-        // SpeechRecognizer + AudioPlaybackCapture stream: ERROR_SERVER_DISCONNECTED
-        // loops at ~10ms forever). Reset on any sign of life.
-        private var consecutiveErrors = 0
         // After onEndOfSpeech the on-device recognizer often emits one more partial
         // identical to the just-finalized text. Suppress it within this window so it
         // doesn't create a duplicate entry.
@@ -145,6 +153,8 @@ class SpeechEngine(private val context: Context) : SttEngine {
         override fun onReadyForSpeech(p: Bundle?) { Log.d(TAG, "onReadyForSpeech") }
         override fun onBeginningOfSpeech() {
             Log.d(TAG, "onBeginningOfSpeech")
+            consecutiveErrors = 0
+            consecutiveBusyErrors = 0
             lastPartialText = null
             endOfSpeechFinalized = false
             mainHandler.removeCallbacks(forceChunkRunnable)
@@ -186,13 +196,29 @@ class SpeechEngine(private val context: Context) : SttEngine {
                 13 -> "LANGUAGE_UNAVAILABLE"
                 else -> "UNKNOWN"
             }
-            Log.w(TAG, "onError: $error ($name) lastPartial=${lastPartialText?.take(20)}")
+            consecutiveErrors++
+            val isBusy = error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY
+            if (isBusy) consecutiveBusyErrors++ else consecutiveBusyErrors = 0
+            Log.w(TAG, "onError: $error ($name) lastPartial=${lastPartialText?.take(20)} consecutive=$consecutiveErrors busy=$consecutiveBusyErrors")
             mainHandler.removeCallbacks(forceChunkRunnable)
             lastPartialText?.let { listener?.onFinal(it, "ja-JP") }
             lastPartialText = null
             mainHandler.post {
                 closeSession()
-                if (running) startSession()
+                val busyOut = consecutiveBusyErrors >= MAX_BUSY_ERRORS
+                val countOut = consecutiveErrors >= MAX_CONSECUTIVE_ERRORS
+                if (busyOut || countOut) {
+                    Log.e(TAG, "giving up — busyOut=$busyOut countOut=$countOut errors=$consecutiveErrors")
+                    running = false
+                    val reason = if (busyOut) {
+                        "音声認識サービスが他で使用中（再起動が必要）"
+                    } else {
+                        "音声認識サービスに繰り返し失敗（再起動が必要）"
+                    }
+                    modelListener?.onUnavailable(reason)
+                } else if (running) {
+                    startSession()
+                }
             }
         }
 
@@ -222,6 +248,8 @@ class SpeechEngine(private val context: Context) : SttEngine {
                 ?.firstOrNull()
             Log.d(TAG, "onPartialResults: ${text ?: "<null>"}")
             if (text.isNullOrBlank()) return
+            consecutiveErrors = 0
+            consecutiveBusyErrors = 0
             if (text == staleFinalText &&
                 System.currentTimeMillis() - staleFinalAt < STALE_PARTIAL_WINDOW_MS) {
                 Log.d(TAG, "dropping stale partial echo")
@@ -237,5 +265,7 @@ class SpeechEngine(private val context: Context) : SttEngine {
         private const val TAG = "SpeechEngine"
         private const val STALE_PARTIAL_WINDOW_MS = 700L
         private const val FORCE_CHUNK_AFTER_MS = 30_000L
+        private const val MAX_CONSECUTIVE_ERRORS = 10
+        private const val MAX_BUSY_ERRORS = 2
     }
 }

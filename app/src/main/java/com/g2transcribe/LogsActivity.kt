@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.os.Bundle
 import android.text.format.DateUtils
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -12,40 +13,42 @@ import java.io.File
 
 /**
  * Lists transcript log files written by [TranscribeService] when the "save log"
- * preference is enabled. Tapping a file shows its content in a dialog.
+ * preference is enabled. Tap a file to view; long-press to delete a single file;
+ * use the "全部削除" button to clear all at once.
  */
 class LogsActivity : AppCompatActivity() {
+
+    private lateinit var listContainer: LinearLayout
+    private lateinit var deleteAllButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val content = LinearLayout(this).apply {
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 80, 48, 48)
         }
 
-        content.addView(TextView(this).apply {
+        root.addView(TextView(this).apply {
             text = getString(R.string.logs_title)
             textSize = 22f
             setTextColor(0xFFFFFFFF.toInt())
-            setPadding(0, 0, 0, 32)
+            setPadding(0, 0, 0, 16)
         })
 
-        val dir = File(getExternalFilesDir(null), "logs")
-        val files = dir.listFiles()?.sortedByDescending { it.lastModified() } ?: emptyList()
-
-        if (files.isEmpty()) {
-            content.addView(TextView(this).apply {
-                text = getString(R.string.logs_empty)
-                setTextColor(0xFF888888.toInt())
-                textSize = 14f
-                setPadding(0, 24, 0, 0)
-            })
-        } else {
-            files.forEach { file ->
-                content.addView(buildFileRow(file))
-            }
+        deleteAllButton = Button(this).apply {
+            text = getString(R.string.logs_delete_all)
+            setTextColor(0xFFFFFFFF.toInt())
+            setBackgroundColor(0xFF6E1F1F.toInt())
+            setOnClickListener { confirmDeleteAll() }
         }
+        root.addView(deleteAllButton)
+
+        listContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 24, 0, 0)
+        }
+        root.addView(listContainer)
 
         val scroll = ScrollView(this).apply {
             setBackgroundColor(0xFF121212.toInt())
@@ -53,9 +56,33 @@ class LogsActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
             )
-            addView(content)
+            addView(root)
         }
         setContentView(scroll)
+
+        rebuildList()
+    }
+
+    private fun logFiles(): List<File> {
+        val dir = File(getExternalFilesDir(null), "logs")
+        return dir.listFiles()?.sortedByDescending { it.lastModified() } ?: emptyList()
+    }
+
+    private fun rebuildList() {
+        listContainer.removeAllViews()
+        val files = logFiles()
+        deleteAllButton.visibility = if (files.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
+
+        if (files.isEmpty()) {
+            listContainer.addView(TextView(this).apply {
+                text = getString(R.string.logs_empty)
+                setTextColor(0xFF888888.toInt())
+                textSize = 14f
+                setPadding(0, 24, 0, 0)
+            })
+            return
+        }
+        files.forEach { file -> listContainer.addView(buildFileRow(file)) }
     }
 
     private fun buildFileRow(file: File): TextView {
@@ -77,6 +104,10 @@ class LogsActivity : AppCompatActivity() {
             isClickable = true
             isFocusable = true
             setOnClickListener { showFileContent(file) }
+            setOnLongClickListener {
+                confirmDeleteOne(file)
+                true
+            }
         }
     }
 
@@ -93,7 +124,33 @@ class LogsActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle(file.nameWithoutExtension)
             .setView(sv)
-            .setPositiveButton("閉じる", null)
+            .setPositiveButton(getString(R.string.dialog_close), null)
+            .setNeutralButton(getString(R.string.logs_delete_one)) { _, _ -> confirmDeleteOne(file) }
+            .show()
+    }
+
+    private fun confirmDeleteOne(file: File) {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.logs_delete_one_title))
+            .setMessage(file.nameWithoutExtension)
+            .setPositiveButton(getString(R.string.logs_delete_one)) { _, _ ->
+                file.delete()
+                rebuildList()
+            }
+            .setNegativeButton(getString(R.string.dialog_cancel), null)
+            .show()
+    }
+
+    private fun confirmDeleteAll() {
+        val count = logFiles().size
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.logs_delete_all_title))
+            .setMessage(getString(R.string.logs_delete_all_message, count))
+            .setPositiveButton(getString(R.string.logs_delete_all)) { _, _ ->
+                logFiles().forEach { it.delete() }
+                rebuildList()
+            }
+            .setNegativeButton(getString(R.string.dialog_cancel), null)
             .show()
     }
 }

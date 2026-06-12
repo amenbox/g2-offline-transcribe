@@ -34,6 +34,19 @@
             android:tint="#888888" />
     </RelativeLayout>
 
+    <!-- Restart banner: shown only when STT engine is unavailable -->
+    <Button
+        android:id="@+id/restartButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:layout_marginHorizontal="20dp"
+        android:backgroundTint="#6E1F1F"
+        android:textColor="#FFFFFF"
+        android:textAllCaps="false"
+        android:visibility="gone"
+        android:text="@string/restart_app" />
+
     <!-- Scrollable transcript log -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/transcriptList"
