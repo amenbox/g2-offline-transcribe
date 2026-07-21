@@ -29,7 +29,6 @@
     <string name="pref_display_timeout_off">0 = 消さない</string>
     <string name="pref_stt_engine">音声認識エンジン</string>
     <string name="pref_stt_engine_android">標準（Pixel オフライン）</string>
-    <string name="pref_stt_engine_yyapis">YYAPIs（ネット必須・高精度）</string>
     <string name="pref_stt_engine_mlkit">ML Kit GenAI（Pixel 10・オフライン）</string>
     <string name="pref_stt_engine_sensevoice">SenseVoice（完全オフライン・要モデルDL）</string>
     <string name="pref_sensevoice_model">SenseVoice モデル</string>
@@ -45,9 +44,6 @@
     <string name="pref_mic_source_phone">スマホ本体マイク</string>
     <string name="pref_mic_source_summary">「スマホ本体マイク」を選ぶと G2 は表示専用になり、音声はスマホから取得します。</string>
     <string name="status_phone_mic_suffix"> (本体マイク)</string>
-    <string name="pref_yyapis_api_key">YYAPIs API キー</string>
-    <string name="pref_yyapis_api_key_summary">YYAPIs を選んだ場合のみ必要。各自で取得してここに貼り付けてください。</string>
-    <string name="pref_yyapis_api_key_placeholder">APIキーを入力</string>
     <string name="restart_app">アプリを再起動</string>
     <string name="engine_switch_title">エンジン切替</string>
     <string name="engine_switch_message">適用するにはアプリの再起動が必要です</string>

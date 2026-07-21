@@ -118,7 +118,6 @@ class TranscribeService : LifecycleService() {
         usePhoneMic = prefs.getString("mic_source", "g2") == "phone"
 
         speech = when (prefs.getString("stt_engine", "android")) {
-            "yyapis"     -> YyApiSpeechEngine(applicationContext, prefs.getString("yyapis_api_key", "") ?: "")
             "mlkit"      -> MlKitGenAiSpeechEngine(applicationContext)
             "sensevoice" -> SenseVoiceSpeechEngine(applicationContext)
             else         -> SpeechEngine(applicationContext)

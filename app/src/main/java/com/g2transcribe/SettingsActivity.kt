@@ -7,10 +7,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.os.Process
-import android.text.Editable
-import android.text.TextWatcher
 import android.widget.Button
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
@@ -30,7 +27,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private var needsRestart = false
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == "stt_engine" || key == "yyapis_api_key" || key == "mic_source") needsRestart = true
+        if (key == "stt_engine" || key == "mic_source") needsRestart = true
     }
     private var senseVoiceStatusView: TextView? = null
     private var senseVoiceButton: Button? = null
@@ -115,7 +112,6 @@ class SettingsActivity : AppCompatActivity() {
             add("android" to getString(R.string.pref_stt_engine_android))
             if (isPixel10()) add("mlkit" to getString(R.string.pref_stt_engine_mlkit))
             add("sensevoice" to getString(R.string.pref_stt_engine_sensevoice))
-            add("yyapis" to getString(R.string.pref_stt_engine_yyapis))
         }
         val engineGroup = RadioGroup(this).apply {
             orientation = RadioGroup.VERTICAL
@@ -176,39 +172,6 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
         layout.addView(micGroup)
-
-        val apiKeyLabel = TextView(this).apply {
-            text = getString(R.string.pref_yyapis_api_key)
-            textSize = 16f
-            setTextColor(0xFFFFFFFF.toInt())
-            setPadding(0, 48, 0, 8)
-        }
-        layout.addView(apiKeyLabel)
-
-        val apiKeyHint = TextView(this).apply {
-            text = getString(R.string.pref_yyapis_api_key_summary)
-            textSize = 12f
-            setTextColor(0xFF888888.toInt())
-            setPadding(0, 0, 0, 8)
-        }
-        layout.addView(apiKeyHint)
-
-        val apiKeyEdit = EditText(this).apply {
-            setText(prefs.getString("yyapis_api_key", ""))
-            setTextColor(0xFFFFFFFF.toInt())
-            setHintTextColor(0xFF666666.toInt())
-            hint = getString(R.string.pref_yyapis_api_key_placeholder)
-            setBackgroundColor(0xFF1E1E1E.toInt())
-            setPadding(24, 24, 24, 24)
-            addTextChangedListener(object : TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-                override fun afterTextChanged(s: Editable?) {
-                    prefs.edit().putString("yyapis_api_key", s?.toString().orEmpty()).apply()
-                }
-            })
-        }
-        layout.addView(apiKeyEdit)
 
         // ---- SenseVoice model management ----
         val svLabel = TextView(this).apply {

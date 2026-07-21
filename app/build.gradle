@@ -1,7 +1,6 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
-    id 'com.google.protobuf'
 }
 
 android {
@@ -46,26 +45,6 @@ android {
     }
 }
 
-protobuf {
-    protoc { artifact = "com.google.protobuf:protoc:4.28.2" }
-    plugins {
-        grpc { artifact = "io.grpc:protoc-gen-grpc-java:1.66.0" }
-        grpckt { artifact = "io.grpc:protoc-gen-grpc-kotlin:1.4.1:jdk8@jar" }
-    }
-    generateProtoTasks {
-        all().each { task ->
-            task.builtins {
-                java { }
-                kotlin { }
-            }
-            task.plugins {
-                grpc { }
-                grpckt { }
-            }
-        }
-    }
-}
-
 dependencies {
     implementation 'androidx.core:core-ktx:1.13.1'
     implementation 'androidx.appcompat:appcompat:1.7.0'
@@ -94,22 +73,4 @@ dependencies {
     // Alpha API — signature may shift in future releases. Kept behind a Pixel 10
     // Settings gate so non-Pixel-10 devices never touch the code path.
     implementation 'com.google.mlkit:genai-speech-recognition:1.0.0-alpha1'
-
-    // YYAPIs gRPC streaming STT
-    // Use full protobuf (not -lite) to coexist with Mentra SDK which already pulls
-    // com.google.protobuf:protobuf-java in.
-    implementation 'com.google.protobuf:protobuf-kotlin:4.28.2'
-    implementation 'io.grpc:grpc-protobuf:1.66.0'
-    implementation 'io.grpc:grpc-stub:1.66.0'
-    implementation 'io.grpc:grpc-kotlin-stub:1.4.1'
-    implementation 'io.grpc:grpc-okhttp:1.66.0'
-}
-
-configurations.all {
-    resolutionStrategy.eachDependency { details ->
-        if (details.requested.group == 'com.google.protobuf' &&
-            details.requested.name.startsWith('protobuf-')) {
-            details.useVersion '4.28.2'
-        }
-    }
 }
