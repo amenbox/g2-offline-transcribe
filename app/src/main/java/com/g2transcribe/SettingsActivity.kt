@@ -14,12 +14,17 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
+import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -27,6 +32,8 @@ class SettingsActivity : AppCompatActivity() {
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "stt_engine" || key == "yyapis_api_key" || key == "mic_source") needsRestart = true
     }
+    private var senseVoiceStatusView: TextView? = null
+    private var senseVoiceButton: Button? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -107,6 +114,7 @@ class SettingsActivity : AppCompatActivity() {
         val engineOptions = buildList {
             add("android" to getString(R.string.pref_stt_engine_android))
             if (isPixel10()) add("mlkit" to getString(R.string.pref_stt_engine_mlkit))
+            add("sensevoice" to getString(R.string.pref_stt_engine_sensevoice))
             add("yyapis" to getString(R.string.pref_stt_engine_yyapis))
         }
         val engineGroup = RadioGroup(this).apply {
@@ -202,7 +210,45 @@ class SettingsActivity : AppCompatActivity() {
         }
         layout.addView(apiKeyEdit)
 
-        setContentView(layout)
+        // ---- SenseVoice model management ----
+        val svLabel = TextView(this).apply {
+            text = getString(R.string.pref_sensevoice_model)
+            textSize = 16f
+            setTextColor(0xFFFFFFFF.toInt())
+            setPadding(0, 48, 0, 8)
+        }
+        layout.addView(svLabel)
+
+        val svHint = TextView(this).apply {
+            text = getString(R.string.pref_sensevoice_model_summary)
+            textSize = 12f
+            setTextColor(0xFF888888.toInt())
+            setPadding(0, 0, 0, 8)
+        }
+        layout.addView(svHint)
+
+        senseVoiceStatusView = TextView(this).apply {
+            text = senseVoiceStatusText()
+            textSize = 13f
+            setTextColor(0xFFAAAAAA.toInt())
+            setPadding(0, 0, 0, 8)
+        }
+        layout.addView(senseVoiceStatusView)
+
+        senseVoiceButton = Button(this).apply {
+            text = if (SenseVoiceModelManager.isPresent(this@SettingsActivity))
+                getString(R.string.pref_sensevoice_redownload)
+            else
+                getString(R.string.pref_sensevoice_download)
+            setTextColor(0xFFFFFFFF.toInt())
+            setBackgroundColor(0xFF1F3D5C.toInt())
+            setOnClickListener { startSenseVoiceDownload() }
+        }
+        layout.addView(senseVoiceButton)
+
+        // ScrollView wrap so bottom controls stay reachable as engine sections grow.
+        val scroll = ScrollView(this).apply { addView(layout) }
+        setContentView(scroll)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -248,6 +294,56 @@ class SettingsActivity : AppCompatActivity() {
             .set(AlarmManager.RTC, System.currentTimeMillis() + 1500, pi)
         finishAffinity()
         Process.killProcess(Process.myPid())
+    }
+
+    private fun senseVoiceStatusText(): String {
+        return if (SenseVoiceModelManager.isPresent(this)) {
+            val mb = SenseVoiceModelManager.totalSizeBytes(this) / 1_048_576
+            getString(R.string.pref_sensevoice_status_present, mb)
+        } else {
+            getString(R.string.pref_sensevoice_status_absent)
+        }
+    }
+
+    private fun startSenseVoiceDownload() {
+        val button = senseVoiceButton ?: return
+        val status = senseVoiceStatusView ?: return
+        button.isEnabled = false
+        button.text = getString(R.string.pref_sensevoice_downloading)
+        lifecycleScope.launch {
+            val result = SenseVoiceModelManager.downloadAll(
+                this@SettingsActivity,
+                object : SenseVoiceModelManager.ProgressListener {
+                    override fun onProgress(message: String, bytesDownloaded: Long, totalBytes: Long) {
+                        val mb = bytesDownloaded / 1_048_576
+                        val totalMb = if (totalBytes > 0) totalBytes / 1_048_576 else -1
+                        val text = if (totalMb > 0) "$message ${mb}/${totalMb}MB" else "$message ${mb}MB"
+                        runOnUiThread { button.text = text }
+                    }
+                },
+            )
+            withContext(Dispatchers.Main) {
+                button.isEnabled = true
+                when (result) {
+                    is SenseVoiceModelManager.Result.Success -> {
+                        button.text = getString(R.string.pref_sensevoice_redownload)
+                        status.text = senseVoiceStatusText()
+                        if (PreferenceManager.getDefaultSharedPreferences(this@SettingsActivity)
+                                .getString("stt_engine", DEFAULT_ENGINE) == "sensevoice") {
+                            needsRestart = true
+                        }
+                    }
+                    is SenseVoiceModelManager.Result.Failure -> {
+                        button.text = getString(R.string.pref_sensevoice_download)
+                        AlertDialog.Builder(this@SettingsActivity)
+                            .setTitle(R.string.pref_sensevoice_download_failed)
+                            .setMessage(result.message)
+                            .setPositiveButton(R.string.dialog_close, null)
+                            .show()
+                    }
+                }
+            }
+        }
     }
 
     private fun isPixel10(): Boolean {

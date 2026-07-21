@@ -31,6 +31,15 @@
     <string name="pref_stt_engine_android">標準（Pixel オフライン）</string>
     <string name="pref_stt_engine_yyapis">YYAPIs（ネット必須・高精度）</string>
     <string name="pref_stt_engine_mlkit">ML Kit GenAI（Pixel 10・オフライン）</string>
+    <string name="pref_stt_engine_sensevoice">SenseVoice（完全オフライン・要モデルDL）</string>
+    <string name="pref_sensevoice_model">SenseVoice モデル</string>
+    <string name="pref_sensevoice_model_summary">SenseVoice を使うには約 230MB のモデルをダウンロードする必要があります。Wi-Fi 推奨。</string>
+    <string name="pref_sensevoice_status_present">ダウンロード済み（%1$d MB）</string>
+    <string name="pref_sensevoice_status_absent">未ダウンロード</string>
+    <string name="pref_sensevoice_download">SenseVoice モデルをダウンロード</string>
+    <string name="pref_sensevoice_redownload">再ダウンロード</string>
+    <string name="pref_sensevoice_downloading">ダウンロード中…</string>
+    <string name="pref_sensevoice_download_failed">ダウンロード失敗</string>
     <string name="pref_mic_source">マイク音源</string>
     <string name="pref_mic_source_g2">G2 グラス内蔵マイク</string>
     <string name="pref_mic_source_phone">スマホ本体マイク</string>
