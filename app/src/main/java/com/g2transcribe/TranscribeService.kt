@@ -69,6 +69,8 @@ class TranscribeService : LifecycleService() {
     private lateinit var sdk: MentraBluetoothSdk
     private lateinit var speech: SttEngine
     private lateinit var prefs: SharedPreferences
+    private var phoneMic: PhoneMicSource? = null
+    private var usePhoneMic = false
     @Volatile private var modelDownloading = false
     private var scanSession: ScanSession? = null
     @Volatile private var connectAttempted = false
@@ -113,8 +115,11 @@ class TranscribeService : LifecycleService() {
             openLogFile()
         }
 
+        usePhoneMic = prefs.getString("mic_source", "g2") == "phone"
+
         speech = when (prefs.getString("stt_engine", "android")) {
             "yyapis" -> YyApiSpeechEngine(applicationContext, prefs.getString("yyapis_api_key", "") ?: "")
+            "mlkit"  -> MlKitGenAiSpeechEngine(applicationContext)
             else     -> SpeechEngine(applicationContext)
         }
         speech.setListener(object : SttEngine.Listener {
@@ -142,6 +147,10 @@ class TranscribeService : LifecycleService() {
             }
         })
         speech.start()
+
+        if (usePhoneMic) {
+            phoneMic = PhoneMicSource { pcm -> speech.acceptAudio(pcm) }.also { it.start() }
+        }
 
         sdk = MentraBluetoothSdk.create(applicationContext, SdkCallback())
         registerReceiver(btStateReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
@@ -192,6 +201,8 @@ class TranscribeService : LifecycleService() {
         try { unregisterReceiver(btStateReceiver) } catch (e: Exception) { Log.w(TAG, "unregister: ${e.message}") }
         try { scanSession?.stop() } catch (e: Exception) { Log.w(TAG, "scan stop: ${e.message}") }
         try { sdk.close() } catch (e: Exception) { Log.w(TAG, "sdk close: ${e.message}") }
+        phoneMic?.stop()
+        phoneMic = null
         speech.stop()
         closeLogFile()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -267,15 +278,21 @@ class TranscribeService : LifecycleService() {
             if (nowConnected && !glassesConnected) {
                 glassesConnected = true
                 needsCaseReset = false
-                Log.d(TAG, "G2 connected — enabling glasses mic")
+                Log.d(TAG, if (usePhoneMic) "G2 connected — display-only (phone mic in use)"
+                           else "G2 connected — enabling glasses mic")
                 onConnectionState("CONNECTED")
                 try {
                     DeviceStore.apply("bluetooth", "contextual_dashboard", false)
                     sdk.setScreenDisabled(false)
                     sdk.clearDisplay()
                 } catch (e: Exception) { Log.w(TAG, "display: ${e.message}") }
-                sdk.setMicState(enabled = true, useGlassesMic = true)
-                armPcmWatchdog()
+                if (usePhoneMic) {
+                    // Explicitly turn the glasses mic off so nothing streams over BLE.
+                    try { sdk.setMicState(enabled = false, useGlassesMic = true) } catch (_: Exception) {}
+                } else {
+                    sdk.setMicState(enabled = true, useGlassesMic = true)
+                    armPcmWatchdog()
+                }
                 // SDK sends "MentraOS Connected" to the glasses just after onGlassesChanged
                 // fires. Overwrite it with our app name briefly, then let the auto-clear
                 // timer take it away so the display is ready for transcription.
@@ -293,6 +310,7 @@ class TranscribeService : LifecycleService() {
         }
 
         override fun onMicPcm(event: MicPcmEvent) {
+            if (usePhoneMic) return // Ignore any BLE audio when phone mic is authoritative
             if (!pcmEverReceived) {
                 pcmEverReceived = true
                 watchdog.removeCallbacks(pcmWatchdogRunnable)
@@ -359,13 +377,16 @@ class TranscribeService : LifecycleService() {
     }
 
     private fun onConnectionState(state: String) {
-        connectionStatus = when (state) {
+        val base = when (state) {
             "CONNECTED"  -> getString(R.string.status_connected)
             "CONNECTING" -> getString(R.string.status_connecting)
             "SCANNING"   -> getString(R.string.status_scanning)
             "BT_OFF"     -> getString(R.string.status_bt_off)
             else         -> getString(R.string.status_disconnected)
         }
+        connectionStatus = if (usePhoneMic && state == "CONNECTED")
+            base + getString(R.string.status_phone_mic_suffix)
+        else base
         Log.d(TAG, "Connection: $connectionStatus")
         updateNotification(
             when (state) {

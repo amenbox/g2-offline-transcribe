@@ -25,7 +25,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private var needsRestart = false
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == "stt_engine" || key == "yyapis_api_key") needsRestart = true
+        if (key == "stt_engine" || key == "yyapis_api_key" || key == "mic_source") needsRestart = true
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -104,12 +104,14 @@ class SettingsActivity : AppCompatActivity() {
         layout.addView(engineLabel)
 
         val current = prefs.getString("stt_engine", DEFAULT_ENGINE) ?: DEFAULT_ENGINE
+        val engineOptions = buildList {
+            add("android" to getString(R.string.pref_stt_engine_android))
+            if (isPixel10()) add("mlkit" to getString(R.string.pref_stt_engine_mlkit))
+            add("yyapis" to getString(R.string.pref_stt_engine_yyapis))
+        }
         val engineGroup = RadioGroup(this).apply {
             orientation = RadioGroup.VERTICAL
-            listOf(
-                "android" to getString(R.string.pref_stt_engine_android),
-                "yyapis"  to getString(R.string.pref_stt_engine_yyapis),
-            ).forEach { (value, label) ->
+            engineOptions.forEach { (value, label) ->
                 addView(RadioButton(this@SettingsActivity).apply {
                     id = value.hashCode()
                     text = label
@@ -126,6 +128,46 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
         layout.addView(engineGroup)
+
+        val micLabel = TextView(this).apply {
+            text = getString(R.string.pref_mic_source)
+            textSize = 16f
+            setTextColor(0xFFFFFFFF.toInt())
+            setPadding(0, 48, 0, 8)
+        }
+        layout.addView(micLabel)
+
+        val micHint = TextView(this).apply {
+            text = getString(R.string.pref_mic_source_summary)
+            textSize = 12f
+            setTextColor(0xFF888888.toInt())
+            setPadding(0, 0, 0, 8)
+        }
+        layout.addView(micHint)
+
+        val currentMic = prefs.getString("mic_source", DEFAULT_MIC_SOURCE) ?: DEFAULT_MIC_SOURCE
+        val micGroup = RadioGroup(this).apply {
+            orientation = RadioGroup.VERTICAL
+            listOf(
+                "g2"    to getString(R.string.pref_mic_source_g2),
+                "phone" to getString(R.string.pref_mic_source_phone),
+            ).forEach { (value, label) ->
+                addView(RadioButton(this@SettingsActivity).apply {
+                    id = ("mic_" + value).hashCode()
+                    text = label
+                    setTextColor(0xFFFFFFFF.toInt())
+                    tag = value
+                    isChecked = (value == currentMic)
+                })
+            }
+            setOnCheckedChangeListener { group, checkedId ->
+                val tag = group.findViewById<RadioButton>(checkedId)?.tag as? String
+                if (tag != null) {
+                    prefs.edit().putString("mic_source", tag).apply()
+                }
+            }
+        }
+        layout.addView(micGroup)
 
         val apiKeyLabel = TextView(this).apply {
             text = getString(R.string.pref_yyapis_api_key)
@@ -208,7 +250,16 @@ class SettingsActivity : AppCompatActivity() {
         Process.killProcess(Process.myPid())
     }
 
+    private fun isPixel10(): Boolean {
+        // Pixel 10 family — enables ML Kit GenAI Speech Recognition Advanced mode.
+        // Basic mode is intentionally not offered because it's the same SODA engine
+        // as the standard Android option, so it would add nothing.
+        val model = android.os.Build.MODEL ?: ""
+        return model.startsWith("Pixel 10", ignoreCase = true)
+    }
+
     companion object {
         const val DEFAULT_ENGINE = "android"
+        const val DEFAULT_MIC_SOURCE = "g2"
     }
 }

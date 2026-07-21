@@ -83,6 +83,11 @@ dependencies {
     implementation 'androidx.preference:preference-ktx:1.2.1'
     implementation 'androidx.recyclerview:recyclerview:1.3.2'
 
+    // ML Kit GenAI on-device speech recognition (Pixel 10 → Advanced/Gemini)
+    // Alpha API — signature may shift in future releases. Kept behind a Pixel 10
+    // Settings gate so non-Pixel-10 devices never touch the code path.
+    implementation 'com.google.mlkit:genai-speech-recognition:1.0.0-alpha1'
+
     // YYAPIs gRPC streaming STT
     // Use full protobuf (not -lite) to coexist with Mentra SDK which already pulls
     // com.google.protobuf:protobuf-java in.

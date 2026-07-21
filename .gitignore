@@ -15,6 +15,9 @@
 # Local
 local.properties
 
+# Large third-party AARs kept out of git (checked in locally for experiments)
+/app/libs/
+
 # Claude Code (local dev tooling, design notes)
 .claude/
 CLAUDE.md
