@@ -26,14 +26,17 @@ import java.nio.ByteOrder
  *
  *   PCM in → acceptAudio(bytes) → Float array queued
  *     ↓
- *   worker coroutine drains queue into Silero VAD. On each VAD-emitted speech
- *   segment, invoke the SenseVoice OfflineRecognizer and dispatch the text to
- *   [SttEngine.Listener.onFinal].
+ *   worker coroutine drains queue into Silero VAD. Two decode paths run off
+ *   the same worker:
+ *     - final: on each VAD-emitted segment (SenseVoice's natural granularity)
+ *       → dispatched via [SttEngine.Listener.onFinal].
+ *     - partial: while VAD reports speech in progress, re-decode the growing
+ *       segment every [PARTIAL_INTERVAL_MS] and dispatch via onPartial.
+ *       Without this, maxSpeechDuration (8 s) means continuous speech shows
+ *       nothing on the glasses until the VAD finally cuts.
  *
- * SenseVoice is non-streaming — no partials are emitted. Segments are bounded
- * by the VAD (default max ~8 s). Post-processing strips SenseVoice's
- * `<|lang|><|emotion|>...` tag prefix and collapses spurious inter-CJK spaces
- * the model sometimes inserts.
+ * Post-processing strips SenseVoice's `<|lang|><|emotion|>...` tag prefix and
+ * collapses spurious inter-CJK spaces the model sometimes inserts.
  *
  * Models must be present on disk (see [SenseVoiceModelManager]).
  */
@@ -85,10 +88,9 @@ class SenseVoiceSpeechEngine(private val context: Context) : SttEngine {
         val senseVoiceConfig = OfflineSenseVoiceModelConfig(
             model = File(asr, SenseVoiceModelManager.Files.MODEL).absolutePath,
             language = "ja",
-            // ITN off — matches sherpa-onnx's own realtime SenseVoice sample and
-            // trims a bit of per-segment latency (we don't do heavy number/date
-            // formatting here anyway).
-            useInverseTextNormalization = false,
+            // ITN on — "にせんにじゅうろくねん" → "2026年" makes captions much easier
+            // to skim on the glasses. The extra latency is negligible.
+            useInverseTextNormalization = true,
         )
         val modelConfig = OfflineModelConfig(
             senseVoice = senseVoiceConfig,
@@ -127,29 +129,74 @@ class SenseVoiceSpeechEngine(private val context: Context) : SttEngine {
     private suspend fun runLoop() {
         val v = vad!!
         val r = recognizer!!
+        // Rolling buffer of everything fed to VAD since speech started (or the
+        // last final). Cleared on segment finalize AND on transition to silence.
+        val partialChunks = ArrayDeque<FloatArray>()
+        var partialLenSamples = 0
+        var lastPartialAt = 0L
+
         while (running) {
             val incoming = pcmChannel.receiveCatching().getOrNull() ?: break
             v.acceptWaveform(incoming)
+
+            // Drain any finalized segments first. When the VAD hands us a
+            // segment, that IS the authoritative final for the just-ended
+            // utterance; the partial buffer we were building alongside is now
+            // stale.
             while (!v.empty()) {
                 val segment = v.front()
                 v.pop()
-                if (segment.samples.isEmpty()) continue
-                val stream = r.createStream()
-                try {
-                    stream.acceptWaveform(segment.samples, SAMPLE_RATE)
-                    r.decode(stream)
-                    val raw = r.getResult(stream).text
-                    val cleaned = postProcess(raw)
-                    if (cleaned.isNotBlank()) {
-                        Log.d(TAG, "segment ${segment.samples.size} samples → '${cleaned.take(60)}'")
-                        listener?.onFinal(cleaned, "ja-JP")
-                    }
-                } finally {
-                    stream.release()
+                if (segment.samples.isNotEmpty()) {
+                    decodeAndEmit(r, segment.samples, isFinal = true)
                 }
+                partialChunks.clear()
+                partialLenSamples = 0
+                lastPartialAt = 0L
+            }
+
+            // Then, if the VAD says speech is still in progress, keep growing
+            // the partial buffer and re-decode it at a fixed cadence so the
+            // caption updates while the user is still talking.
+            if (v.isSpeechDetected()) {
+                partialChunks.add(incoming)
+                partialLenSamples += incoming.size
+                val now = System.currentTimeMillis()
+                if (partialLenSamples > 0 && now - lastPartialAt >= PARTIAL_INTERVAL_MS) {
+                    val combined = FloatArray(partialLenSamples)
+                    var offset = 0
+                    for (chunk in partialChunks) {
+                        System.arraycopy(chunk, 0, combined, offset, chunk.size)
+                        offset += chunk.size
+                    }
+                    decodeAndEmit(r, combined, isFinal = false)
+                    lastPartialAt = now
+                }
+            } else if (partialChunks.isNotEmpty()) {
+                // Silence: whatever we'd been accumulating never made it to a
+                // real speech segment, so throw it away.
+                partialChunks.clear()
+                partialLenSamples = 0
+                lastPartialAt = 0L
             }
         }
         Log.w(TAG, "sensevoice loop exited — running=$running")
+    }
+
+    private fun decodeAndEmit(r: OfflineRecognizer, samples: FloatArray, isFinal: Boolean) {
+        val stream = r.createStream()
+        try {
+            stream.acceptWaveform(samples, SAMPLE_RATE)
+            r.decode(stream)
+            val raw = r.getResult(stream).text
+            val cleaned = postProcess(raw)
+            if (cleaned.isBlank()) return
+            val kind = if (isFinal) "final" else "partial"
+            Log.d(TAG, "$kind ${samples.size} samples → '${cleaned.take(60)}'")
+            if (isFinal) listener?.onFinal(cleaned, "ja-JP")
+            else listener?.onPartial(cleaned, "ja-JP")
+        } finally {
+            stream.release()
+        }
     }
 
     override fun acceptAudio(pcm: ByteArray) {
@@ -170,7 +217,7 @@ class SenseVoiceSpeechEngine(private val context: Context) : SttEngine {
         workerJob?.cancel()
         workerJob = null
         pcmChannel.close()
-        scope.launch { scope.cancel() }
+        scope.cancel()
     }
 
     /**
@@ -180,15 +227,20 @@ class SenseVoiceSpeechEngine(private val context: Context) : SttEngine {
      */
     private fun postProcess(raw: String): String {
         val noTags = TAG_PREFIX.replace(raw, "")
-        val cjkSpaceCollapsed = CJK_SPACE.replace(noTags) { m ->
-            m.value.first().toString() + m.value.last().toString()
-        }
+        // CJK_SPACE captures the leading CJK char in group 1; the trailing CJK
+        // is a lookahead (non-consuming), so the match spans only "CJK + \s+".
+        // Replace with just the captured char to drop the whitespace.
+        val cjkSpaceCollapsed = CJK_SPACE.replace(noTags) { m -> m.groupValues[1] }
         return cjkSpaceCollapsed.trim()
     }
 
     companion object {
         private const val TAG = "SenseVoiceSpeechEngine"
         private const val SAMPLE_RATE = 16_000
+        // Cadence for re-decoding the in-progress speech buffer as a partial.
+        // 800 ms lands about 2 partial updates inside a typical VAD segment
+        // (~2 s of speech) without saturating the CPU with decode work.
+        private const val PARTIAL_INTERVAL_MS = 800L
 
         private val TAG_PREFIX = Regex("""<\|[^|>]*\|>""")
         // A CJK code-point, then one-or-more spaces, then another CJK code-point.
