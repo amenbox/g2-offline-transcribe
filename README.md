@@ -18,7 +18,7 @@ Even Realities G2 用の「文字起こし専用」Android アプリ。
 - G2 グラス本体
 - 日本語のオンデバイス音声認識モデルが入った端末（Pixel 系で確認済み）
 
-> 標準エンジンは `SpeechRecognizer.createOnDeviceSpeechRecognizer` を使う完全オフライン構成です。日本語のオンデバイスモデルが端末に入っていない場合、ネット経由 fallback はせず認識が動きません。その場合は YYAPIs を使ってください。ただし YYAPIs はクラウド処理なので**ネット必須・レイテンシも大きめ**です。
+> 標準エンジンは `SpeechRecognizer.createOnDeviceSpeechRecognizer` を使う完全オフライン構成です。日本語のオンデバイスモデルが端末に入っていない場合、ネット経由 fallback はせず認識が動きません。その場合は **SenseVoice** エンジン（別途モデルを DL、完全オフライン）を選ぶか、Pixel 10 なら **ML Kit GenAI** エンジンを選んでください。
 
 ## インストール
 
@@ -64,30 +64,44 @@ cd g2dev
 ./gradlew assembleDebug
 ```
 
-`local.properties` には `sdk.dir` のみあれば足ります（API キーは不要、後述）。
+`local.properties` には `sdk.dir` のみあれば足ります。
 出来上がる APK は `app/build/outputs/apk/debug/app-debug.apk`。
+
+SenseVoice エンジンを使うには sherpa-onnx の Android AAR が必要です。リポジトリには含めていないので、以下を実行して手動で配置してください：
+
+```bash
+mkdir -p app/libs
+curl -L -o app/libs/sherpa-onnx-1.13.4.aar \
+  https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.4/sherpa-onnx-1.13.4.aar
+```
 
 ## 音声認識エンジン
 
 設定画面から切り替え：
 
-| エンジン | ネット | 精度 | 備考 |
-|---|---|---|---|
-| 標準（Pixel オフライン） | 不要 | 端末依存 | 既定。完全オフライン |
-| YYAPIs | 必要 | 高い | API キーが必要（下記） |
+| エンジン | ネット | 備考 |
+|---|---|---|
+| 標準（Pixel オフライン） | 不要 | 既定。Android `SpeechRecognizer` のオンデバイス経路（SODA） |
+| ML Kit GenAI | 不要（初回のみモデル DL） | Pixel 10 限定。on-device Gemini ベース |
+| SenseVoice | 不要（初回のみモデル DL） | sherpa-onnx + SenseVoice-Small int8。約 230MB のモデルを設定画面から DL |
 
-### YYAPIs を使う場合
+いずれも完全オフラインで動作します。SenseVoice / ML Kit のモデルは初回のみ HTTPS でダウンロードします（設定画面のボタンから開始）。
 
-実験的に追加しています。こちらはオフラインの文字起こしではありません。
-YYAPIs は外部のクラウド音声認識サービスです。利用するには各自で API キーを取得して設定画面の「YYAPIs API キー」欄に貼り付けてください。
+## マイク音源
 
-API キーはアプリの SharedPreferences に保存されます。リポジトリ／APK にはキーは含まれません。
+設定画面から切り替え：
+
+| 選択 | 動作 |
+|---|---|
+| G2 グラス内蔵マイク | 既定。BLE 経由で G2 の DSP 処理済み音声を受け取る |
+| スマホ本体マイク | Pixel 側のマイク（`VOICE_RECOGNITION` ソース）で拾う。G2 は表示専用として使う |
 
 ## 設計メモ
 
 - 文字起こし以外の機能は持たない方針
-- G2 内蔵マイクの LC3 音声を BLE 経由で受け取り、デコード後に STT へ流す
+- 既定は G2 内蔵マイクの LC3 音声を BLE 経由で受け取り、デコード後に STT へ流す（スマホマイクへの切替も可能）
 - BLE 層は [Mentra Bluetooth SDK](https://github.com/Mentra-Community/MentraOS) を利用
+- SenseVoice エンジンは [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) の Android AAR + Silero VAD + SenseVoice-Small int8
 
 ## ライセンス
 
@@ -96,4 +110,6 @@ MIT License — [LICENSE](LICENSE) を参照。
 ### 利用しているサードパーティ
 
 - [Mentra Bluetooth SDK](https://github.com/Mentra-Community/MentraOS)（MIT License, © Mentra Community）
-- AndroidX / Kotlin / gRPC / OkHttp / Gson 他、各々のオープンソースライセンス
+- [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)（Apache-2.0）と [SenseVoice-Small モデル](https://github.com/FunAudioLLM/SenseVoice)
+- Google ML Kit GenAI Speech Recognition
+- AndroidX / Kotlin / OkHttp / Gson / Apache Commons Compress 他、各々のオープンソースライセンス
