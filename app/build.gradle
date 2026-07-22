@@ -54,12 +54,13 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
     implementation 'com.google.code.gson:gson:2.10.1'
     implementation('com.mentra:bluetooth-sdk:0.1.7') {
-        // Mentra ships sherpa-onnx v1.12.8; we replace it with v1.13.3 as a local
-        // AAR so the SenseVoice engine has a matching runtime. Kept exclude so both
-        // versions don't end up on the classpath simultaneously.
+        // Mentra ships sherpa-onnx v1.12.8; we replace it with v1.13.4 as a local
+        // AAR so the SenseVoice engine has a matching runtime. v1.13.4 bumps the
+        // bundled ONNX Runtime past 1.20.x so the native libs are 16 KB
+        // page-size aligned (silences the Android 15+/Pixel warning).
         exclude group: 'com.github.k2-fsa', module: 'sherpa-onnx'
     }
-    implementation files('libs/sherpa-onnx-1.13.3.aar')
+    implementation files('libs/sherpa-onnx-1.13.4.aar')
     implementation 'androidx.preference:preference-ktx:1.2.1'
     implementation 'androidx.recyclerview:recyclerview:1.3.2'
 
