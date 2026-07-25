@@ -39,6 +39,10 @@
     <string name="pref_sensevoice_redownload">再ダウンロード</string>
     <string name="pref_sensevoice_downloading">ダウンロード中…</string>
     <string name="pref_sensevoice_download_failed">ダウンロード失敗</string>
+    <string name="pref_sensevoice_dl_leave_title">ダウンロード中です</string>
+    <string name="pref_sensevoice_dl_leave_message">今抜けるとダウンロードが中断し、次回起動時にやり直しになります。それでも閉じますか？</string>
+    <string name="pref_sensevoice_dl_leave_stay">ダウンロードを続ける</string>
+    <string name="pref_sensevoice_dl_leave_cancel">中断して閉じる</string>
     <string name="pref_mic_source">マイク音源</string>
     <string name="pref_mic_source_g2">G2 グラス内蔵マイク</string>
     <string name="pref_mic_source_phone">スマホ本体マイク</string>

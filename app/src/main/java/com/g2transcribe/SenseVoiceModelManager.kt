@@ -36,6 +36,8 @@ object SenseVoiceModelManager {
     fun modelDir(context: Context): File = File(context.filesDir, "sensevoice")
     fun asrDir(context: Context): File = File(modelDir(context), ASR_BUNDLE_NAME)
     fun vadFile(context: Context): File = File(modelDir(context), VAD_FILE_NAME)
+    /** Written once VAD + ASR bundle are fully in place. Absence = partial/broken. */
+    private fun completeMarker(context: Context): File = File(modelDir(context), ".complete")
 
     /** Expected files inside the sherpa-onnx SenseVoice int8 bundle. */
     object Files {
@@ -46,6 +48,10 @@ object SenseVoiceModelManager {
     private val requiredAsrFiles = listOf(Files.MODEL, Files.TOKENS)
 
     fun isPresent(context: Context): Boolean {
+        // The marker is only written after a successful download+extract, so its
+        // absence means a previous run was interrupted (killed mid-download or
+        // mid-tar-extract) and the files on disk cannot be trusted.
+        if (!completeMarker(context).exists()) return false
         if (!vadFile(context).exists()) return false
         val asr = asrDir(context)
         if (!asr.isDirectory) return false
@@ -80,12 +86,19 @@ object SenseVoiceModelManager {
     suspend fun downloadAll(context: Context, progress: ProgressListener? = null): Result =
         withContext(Dispatchers.IO) {
             modelDir(context).mkdirs()
+            // If a previous run left partial state (killed mid-download or
+            // mid-extract), the marker file is missing but stale bytes may be
+            // scattered around. Wipe everything and start clean so we don't
+            // silently load a truncated model.
+            if (!completeMarker(context).exists()) {
+                cleanPartialState(context)
+            }
             try {
                 if (!vadFile(context).exists()) {
                     val r = downloadTo(VAD_URL, vadFile(context), "VAD", progress)
                     if (r is Result.Failure) return@withContext r
                 }
-                if (!isAsrPresent(context)) {
+                if (!isAsrOnDisk(context)) {
                     val tarFile = File(modelDir(context), "asr.tar.bz2")
                     val r = downloadTo(ASR_BUNDLE_URL, tarFile, "SenseVoice", progress)
                     if (r is Result.Failure) return@withContext r
@@ -93,9 +106,12 @@ object SenseVoiceModelManager {
                     extractTarBz2(tarFile, modelDir(context))
                     tarFile.delete()
                 }
-                if (!isPresent(context)) {
+                if (!vadFile(context).exists() || !isAsrOnDisk(context)) {
                     return@withContext Result.Failure("展開後の必須ファイルが見つかりません")
                 }
+                // Only now is the model safe to use; the marker's existence is
+                // what [isPresent] keys on.
+                completeMarker(context).writeText("ok")
                 Result.Success
             } catch (e: IOException) {
                 Log.w(TAG, "downloadAll failed", e)
@@ -106,9 +122,25 @@ object SenseVoiceModelManager {
             }
         }
 
-    private fun isAsrPresent(context: Context): Boolean {
+    /** Files-on-disk check without the marker requirement (used during download). */
+    private fun isAsrOnDisk(context: Context): Boolean {
         val asr = asrDir(context)
         return asr.isDirectory && requiredAsrFiles.all { File(asr, it).exists() }
+    }
+
+    private fun cleanPartialState(context: Context) {
+        val dir = modelDir(context)
+        if (!dir.exists()) return
+        // Nuke anything that could be half-written: .part files, the tar.bz2 that
+        // wasn't cleaned after extract, and the ASR dir itself (extraction may
+        // have populated some files but not others).
+        dir.listFiles()?.forEach { f ->
+            when {
+                f.name.endsWith(".part") -> f.delete()
+                f.name == "asr.tar.bz2" -> f.delete()
+                f.isDirectory && f.name == ASR_BUNDLE_NAME -> f.deleteRecursively()
+            }
+        }
     }
 
     private fun downloadTo(

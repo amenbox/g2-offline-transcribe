@@ -31,6 +31,7 @@ class SettingsActivity : AppCompatActivity() {
     }
     private var senseVoiceStatusView: TextView? = null
     private var senseVoiceButton: Button? = null
+    @Volatile private var senseVoiceDownloading = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -215,7 +216,19 @@ class SettingsActivity : AppCompatActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (needsRestart) {
+                if (senseVoiceDownloading) {
+                    // Leaving mid-download would kill the coroutine, leaving
+                    // partial files. Give the user an explicit choice; if they
+                    // still leave, the next launch will clean up via the
+                    // marker check in SenseVoiceModelManager.
+                    AlertDialog.Builder(this@SettingsActivity)
+                        .setTitle(R.string.pref_sensevoice_dl_leave_title)
+                        .setMessage(R.string.pref_sensevoice_dl_leave_message)
+                        .setPositiveButton(R.string.pref_sensevoice_dl_leave_stay, null)
+                        .setNegativeButton(R.string.pref_sensevoice_dl_leave_cancel) { _, _ -> finish() }
+                        .setCancelable(false)
+                        .show()
+                } else if (needsRestart) {
                     AlertDialog.Builder(this@SettingsActivity)
                         .setTitle(R.string.engine_switch_title)
                         .setMessage(R.string.engine_switch_message)
@@ -273,18 +286,23 @@ class SettingsActivity : AppCompatActivity() {
         val status = senseVoiceStatusView ?: return
         button.isEnabled = false
         button.text = getString(R.string.pref_sensevoice_downloading)
+        senseVoiceDownloading = true
         lifecycleScope.launch {
-            val result = SenseVoiceModelManager.downloadAll(
-                this@SettingsActivity,
-                object : SenseVoiceModelManager.ProgressListener {
-                    override fun onProgress(message: String, bytesDownloaded: Long, totalBytes: Long) {
-                        val mb = bytesDownloaded / 1_048_576
-                        val totalMb = if (totalBytes > 0) totalBytes / 1_048_576 else -1
-                        val text = if (totalMb > 0) "$message ${mb}/${totalMb}MB" else "$message ${mb}MB"
-                        runOnUiThread { button.text = text }
-                    }
-                },
-            )
+            val result = try {
+                SenseVoiceModelManager.downloadAll(
+                    this@SettingsActivity,
+                    object : SenseVoiceModelManager.ProgressListener {
+                        override fun onProgress(message: String, bytesDownloaded: Long, totalBytes: Long) {
+                            val mb = bytesDownloaded / 1_048_576
+                            val totalMb = if (totalBytes > 0) totalBytes / 1_048_576 else -1
+                            val text = if (totalMb > 0) "$message ${mb}/${totalMb}MB" else "$message ${mb}MB"
+                            runOnUiThread { button.text = text }
+                        }
+                    },
+                )
+            } finally {
+                senseVoiceDownloading = false
+            }
             withContext(Dispatchers.Main) {
                 button.isEnabled = true
                 when (result) {
